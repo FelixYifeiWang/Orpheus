@@ -1,0 +1,19 @@
+{
+  "name": "muse-eeg-visualization",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "chart.js": "^4.4.6",
+    "express": "^4.21.1",
+    "muse-js": "^3.3.0",
+    "openai": "^4.73.0",
+    "ws": "^8.18.0"
+  }
+}

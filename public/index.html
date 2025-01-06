@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EEG-Driven Particle Visualization</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #chartContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.8); /* Semi-transparent background */
+            display: none; /* Initially hidden */
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+        }
+        #eegChart {
+            width: 90%;
+            height: 90%;
+        }
+        #toggleButton {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 30;
+            background-color: rgba(255, 255, 255, 0);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            font-family: Arial, sans-serif;
+            opacity: 0.5;
+        }
+        #toggleButton:hover {
+            opacity: 1;
+        }
+        #chatInput {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50%;
+            height: 40px;
+            background-color: transparent;
+            color: white;
+            border: none;
+            font-size: 20px;
+            text-align: center; /* Center the text */
+            padding: 0;
+            outline: none;
+            opacity: 0.5;
+        }
+
+        #chatInput:focus {
+            opacity: 1;
+        }
+        #aiReply {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            z-index: 15;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/110/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="chartContainer">
+        <canvas id="eegChart"></canvas>
+    </div>
+    <button id="toggleButton">Show Chart</button>
+    <input id="chatInput" type="text" placeholder="Type your message here...">
+    <div id="aiReply"></div>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Particle setup
+        const particleCount = 10000;
+        const particles = new THREE.BufferGeometry();
+        const initialPositions = new Float32Array(particleCount * 3);
+        const positions = new Float32Array(particleCount * 3);
+        const amplitudes = new Float32Array(particleCount);
+
+        for (let i = 0; i < particleCount; i++) {
+            const radius = Math.random() * 1.5 + 0.5;
+            const angle = Math.random() * Math.PI * 2;
+
+            initialPositions[i * 3] = radius * Math.cos(angle); // x
+            initialPositions[i * 3 + 1] = radius * Math.sin(angle); // y
+            initialPositions[i * 3 + 2] = (Math.random() - 0.5) * 1.5; // z
+
+            positions[i * 3] = initialPositions[i * 3];
+            positions[i * 3 + 1] = initialPositions[i * 3 + 1];
+            positions[i * 3 + 2] = initialPositions[i * 3 + 2];
+
+            amplitudes[i] = Math.random() * 0.1 + 0.05; // Smaller amplitude for subtler movement
+        }
+
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.02,
+            color: 0x00ff00, // Default blue
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+        });
+
+        const particleSystem = new THREE.Points(particles, material);
+        scene.add(particleSystem);
+
+        const chatInput = document.getElementById('chatInput');
+        const aiReply = document.getElementById('aiReply');
+
+        chatInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && chatInput.value.trim()) {
+                const userInput = chatInput.value.trim();
+                chatInput.value = '';
+                chatInput.placeholder = '';
+                fetchAIResponse(userInput);
+            }
+        });
+
+        function fetchAIResponse(userInput) {
+            const phaseDescriptions = [
+                "highly active",    // 0
+                "very active",         // 1
+                "active",      // 2
+                "focused",     // 3
+                "balanced",      // 4
+                "relaxed",       // 5
+                "calm",  // 6
+                "very calm" // 7
+            ];
+
+            // Ensure the currentState is within bounds and map it to the description
+            const phaseDescription = phaseDescriptions[Math.min(currentState, phaseDescriptions.length - 1)];
+            const alpha = Math.min(currentEEG.alpha.toFixed(2) || 0, 80);
+            const beta = Math.min(currentEEG.beta.toFixed(2) || 0, 500);
+
+            // Construct the brain state with descriptive phase
+            const brainState = `Alpha: ${alpha}, Beta: ${beta}, Phase: ${phaseDescription}`;
+            
+
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ userInput, brainState }),
+            })
+                .then((response) => response.json())
+                .then((data) => {
+                    if (data.reply) {
+                        displayAIResponse(data.reply);
+                    } else {
+                        displayAIResponse("Sorry, I couldn't process your request.");
+                    }
+                })
+                .catch((error) => {
+                    console.error('Error fetching AI response:', error);
+                    displayAIResponse("An error occurred while fetching the AI response.");
+                });
+        }
+
+
+        function displayAIResponse(response) {
+            aiReply.textContent = response;
+            aiReply.style.opacity = 1;
+
+            // Smoothly darken the particle cloud
+            animateOpacity(material, material.opacity, 0.3, 500); // Transition to 0.3 opacity in 500ms
+
+            setTimeout(() => {
+                aiReply.style.opacity = 0;
+
+                // Smoothly restore the particle cloud opacity
+                animateOpacity(material, material.opacity, 0.8, 500); // Transition back to 0.8 opacity in 500ms
+            }, 3000); // Response displayed for 5 seconds
+        }
+
+        function animateOpacity(material, from, to, duration) {
+            const startTime = Date.now();
+            function step() {
+                const elapsedTime = Date.now() - startTime;
+                const progress = Math.min(elapsedTime / duration, 1); // Cap progress at 1
+
+                material.opacity = from + (to - from) * progress;
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                }
+            }
+            step();
+        }
+
+
+
+        // EEG Chart.js configuration
+        const ctx = document.getElementById('eegChart').getContext('2d');
+        const maxPoints = 50;
+        const eegChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Time labels
+                datasets: [
+                    { label: 'Delta', data: [], borderColor: 'lightgreen', tension: 0.1 },  // Light Green
+                    { label: 'Theta', data: [], borderColor: 'violet', tension: 0.1 },      // Violet
+                    { label: 'Alpha', data: [], borderColor: 'lightblue', tension: 0.1 },  // Light Blue
+                    { label: 'Beta', data: [], borderColor: 'lightcoral', tension: 0.1 },  // Light Red
+                    { label: 'Gamma', data: [], borderColor: 'gold', tension: 0.1 },       // Gold
+                ],
+            },
+            options: {
+                scales: {
+                    y: { beginAtZero: true },
+                },
+            },
+        });
+
+
+
+        // Toggle chart visibility
+        const chartContainer = document.getElementById('chartContainer');
+        const toggleButton = document.getElementById('toggleButton');
+        toggleButton.addEventListener('click', () => {
+            const isHidden = chartContainer.style.display === 'none';
+            chartContainer.style.display = isHidden ? 'flex' : 'none';
+            toggleButton.textContent = isHidden ? 'Hide Chart' : 'Show Chart';
+        });
+
+        // WebSocket connection to Python LSL server
+        const ws = new WebSocket('ws://localhost:6789');
+
+        // Store EEG values and current state
+        let currentEEG = { alpha: 0, beta: 0 };
+        let targetEEG = { alpha: 0, beta: 0 };
+        let lastUpdate = Date.now();
+        let currentState = 4; // Start at a balanced state (Yellow)
+
+        const colorStates = [
+            { ratio: 0.4, color: 0xff0000 }, // Bright Red
+            { ratio: 0.6, color: 0xff7f00 }, // Orange
+            { ratio: 0.8, color: 0xffff00 }, // Yellow
+            { ratio: 1.0, color: 0x00ff00 }, // Bright Green
+            { ratio: 1.2, color: 0x00ff7f }, // Cyan Green
+            { ratio: 1.5, color: 0x007fff }, // Light Blue
+            { ratio: 2.0, color: 0x0000ff }, // Deep Blue
+            { ratio: Infinity, color: 0x000000 }, // Black
+        ];
+
+
+        ws.onmessage = function (event) {
+            try {
+                const message = JSON.parse(event.data);
+                const smoothedData = message.data;
+
+                const alpha = Math.min(smoothedData.alpha || 0, 80);
+                const beta = Math.min(smoothedData.beta || 0, 500);
+
+                targetEEG = { alpha, beta };
+
+                const now = new Date().toISOString();
+                eegChart.data.labels.push(now);
+                eegChart.data.datasets[0].data.push(smoothedData.delta || 0); // Delta
+                eegChart.data.datasets[1].data.push(smoothedData.theta || 0); // Theta
+                eegChart.data.datasets[2].data.push(smoothedData.alpha || 0); // Alpha
+                eegChart.data.datasets[3].data.push(smoothedData.beta || 0);  // Beta
+                eegChart.data.datasets[4].data.push(smoothedData.gamma || 0); // Gamma
+
+                if (eegChart.data.labels.length > maxPoints) {
+                    eegChart.data.labels.shift();
+                    eegChart.data.datasets.forEach((dataset) => dataset.data.shift());
+                }
+
+                eegChart.update();
+
+                updateStateBasedOnEEGRatio(alpha, beta);
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+            }
+        };
+
+
+        function lerp(start, end, t) {
+            return start + (end - start) * t;
+        }
+
+        function updateStateBasedOnEEGRatio(alpha, beta) {
+            const ratio = alpha / beta || 0;
+            console.log(alpha + " " + beta);
+
+            let targetState = colorStates.length - 1;
+            for (let i = 0; i < colorStates.length; i++) {
+                if (ratio <= colorStates[i].ratio) {
+                    targetState = i;
+                    break;
+                }
+            }
+
+            if (targetState > currentState) {
+                currentState++;
+            } else if (targetState < currentState) {
+                currentState--;
+            }
+
+            material.color.set(colorStates[currentState].color);
+        }
+
+        function animate() {
+            const time = Date.now() * 0.002;
+            const positions = particleSystem.geometry.attributes.position.array;
+
+            const now = Date.now();
+            const deltaTime = Math.min(1, (now - lastUpdate) / 2000);
+            currentEEG.alpha = lerp(currentEEG.alpha, targetEEG.alpha, deltaTime);
+            currentEEG.beta = lerp(currentEEG.beta, targetEEG.beta, deltaTime);
+            lastUpdate = now;
+
+            for (let i = 0; i < particleCount; i++) {
+                const idx = i * 3;
+
+                const alphaEffect = currentEEG.alpha / 200;
+                const betaEffect = currentEEG.beta / 200;
+
+                positions[idx] = initialPositions[idx] + Math.sin(time + i) * (amplitudes[i] + alphaEffect);
+                positions[idx + 1] = initialPositions[idx + 1] + Math.cos(time + i) * (amplitudes[i] + betaEffect);
+                positions[idx + 2] = initialPositions[idx + 2];
+            }
+
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
